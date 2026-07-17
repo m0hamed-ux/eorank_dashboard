@@ -10,12 +10,22 @@ const TITLES: Record<string, string> = {
   "/jobs": "Jobs",
   "/competitors": "Competitors",
   "/settings": "Settings",
+  "/billing": "Billing",
 }
+
+// Prefix titles for dynamic detail routes.
+const PREFIXES: [string, string][] = [
+  ["/jobs/", "Job details"],
+  ["/citations/", "Citation details"],
+]
 
 export function PageTitle() {
   const pathname = usePathname()
 
-  return (
-    <h1 className="text-base font-semibold">{TITLES[pathname] ?? "EORank"}</h1>
-  )
+  const title =
+    TITLES[pathname] ??
+    PREFIXES.find(([prefix]) => pathname.startsWith(prefix))?.[1] ??
+    "EORank"
+
+  return <h1 className="text-base font-semibold">{title}</h1>
 }

@@ -8,67 +8,11 @@ import {
   type JobStatus,
   type NewJobInput,
 } from "@/types/job"
+import { SEED_JOBS } from "@/lib/jobs-data"
 
 // Mock client-side job store. Replace with TanStack Query against the
 // FastAPI backend once it exists.
 // TODO: replace with GET /api/v1/jobs + POST /api/v1/jobs
-
-const SEED_JOBS: Job[] = [
-  {
-    id: "job_8f3a2c1d",
-    promptCount: 50,
-    language: "en",
-    providers: ["chatgpt", "gemini", "claude", "perplexity"],
-    topic: "project management software",
-    status: "querying",
-    progress: 55,
-    citations: null,
-    createdAt: "2026-07-16T08:12:00Z",
-  },
-  {
-    id: "job_b71e94f0",
-    promptCount: 100,
-    language: "en",
-    providers: ["chatgpt", "gemini"],
-    topic: "CRM tools for startups",
-    status: "completed",
-    progress: 100,
-    citations: 47,
-    createdAt: "2026-07-15T14:38:00Z",
-  },
-  {
-    id: "job_c2d05e8a",
-    promptCount: 20,
-    language: "fr",
-    providers: ["chatgpt", "perplexity"],
-    topic: "logiciels de comptabilité",
-    status: "partial",
-    progress: 100,
-    citations: 6,
-    createdAt: "2026-07-14T10:05:00Z",
-  },
-  {
-    id: "job_e94d7b26",
-    promptCount: 10,
-    language: "de",
-    providers: ["claude"],
-    status: "failed",
-    progress: 100,
-    citations: null,
-    createdAt: "2026-07-13T16:47:00Z",
-  },
-  {
-    id: "job_a10c6f3b",
-    promptCount: 50,
-    language: "es",
-    providers: ["chatgpt", "gemini", "perplexity"],
-    topic: "plataformas de ecommerce",
-    status: "completed",
-    progress: 100,
-    citations: 22,
-    createdAt: "2026-07-12T09:24:00Z",
-  },
-]
 
 /** Advance a running job one tick through its mock lifecycle */
 function tickJob(job: Job): Job {
@@ -111,6 +55,7 @@ export function useJobs() {
       id: `job_${crypto.randomUUID().slice(0, 8)}`,
       promptCount: input.promptCount,
       language: input.language,
+      country: input.country,
       providers: input.providers,
       topic: input.topic,
       status: "pending",

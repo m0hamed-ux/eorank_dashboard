@@ -15,7 +15,6 @@ import {
   LifeBuoy,
   LogOut,
   Quote,
-  Search,
   Settings,
   Swords,
 } from "lucide-react"
@@ -63,6 +62,7 @@ const navMain = [
 
 const navSecondary = [
   { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Billing", url: "/billing", icon: CreditCard },
   { title: "Support", url: "#", icon: LifeBuoy },
 ]
 
@@ -110,27 +110,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip="Search"
-                  className="text-muted-foreground"
-                >
-                  <Search />
-                  <span>Search</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarGroup>
           <SidebarGroupLabel>Platform</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navMain.map((item) => {
-                const isActive = pathname === item.url
+                // Prefix match keeps parents active on detail routes
+                // (/jobs/job_x highlights Jobs); exact match for "/".
+                const isActive =
+                  item.url === "/"
+                    ? pathname === "/"
+                    : pathname === item.url ||
+                      pathname.startsWith(`${item.url}/`)
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
@@ -227,13 +217,17 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
-                  <DropdownMenuItem>
-                    <Settings />
-                    Account
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings?tab=account">
+                      <Settings />
+                      Account
+                    </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem>
-                    <CreditCard />
-                    Billing
+                  <DropdownMenuItem asChild>
+                    <Link href="/billing">
+                      <CreditCard />
+                      Billing
+                    </Link>
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
