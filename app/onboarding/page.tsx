@@ -6,14 +6,20 @@ import { useUser } from "@clerk/nextjs"
 import {
   ArrowLeft,
   ArrowRight,
-  AtSign,
-  Briefcase,
   Ellipsis,
   Newspaper,
-  Search,
   Sparkles,
   UsersRound,
 } from "lucide-react"
+
+import {
+  GoogleLogo,
+  LinkedInLogo,
+  ProductHuntLogo,
+  RedditLogo,
+  XLogo,
+} from "@/components/referral-logos"
+import { isValidDomain, normalizeDomain } from "@/types/competitor"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -46,13 +52,16 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 import { completeOnboarding } from "./_actions"
 
+// Brand sources use the real logo; generic sources keep a muted lucide icon.
 const REFERRAL_SOURCES = [
-  { value: "Google search", icon: Search },
-  { value: "X / Twitter", icon: AtSign },
-  { value: "LinkedIn", icon: Briefcase },
-  { value: "Friend or colleague", icon: UsersRound },
-  { value: "Blog or article", icon: Newspaper },
-  { value: "Other", icon: Ellipsis },
+  { value: "Google search", icon: GoogleLogo, brand: true },
+  { value: "X / Twitter", icon: XLogo, brand: true },
+  { value: "LinkedIn", icon: LinkedInLogo, brand: true },
+  { value: "Reddit", icon: RedditLogo, brand: true },
+  { value: "Product Hunt", icon: ProductHuntLogo, brand: true },
+  { value: "Friend or colleague", icon: UsersRound, brand: false },
+  { value: "Blog or article", icon: Newspaper, brand: false },
+  { value: "Other", icon: Ellipsis, brand: false },
 ]
 
 const COMPANY_TYPES = [
@@ -110,7 +119,10 @@ export default function OnboardingPage() {
 
   const stepValid = [
     referralSource !== "",
-    companyName.trim() !== "" && companyType !== "" && companySize !== "",
+    companyName.trim() !== "" &&
+      isValidDomain(normalizeDomain(companyWebsite)) &&
+      companyType !== "" &&
+      companySize !== "",
     role !== "",
     true,
   ][step]
@@ -140,7 +152,8 @@ export default function OnboardingPage() {
     const res = await completeOnboarding({
       referralSource,
       companyName,
-      companyWebsite,
+      // The https:// prefix is fixed in the UI; store the full URL.
+      companyWebsite: `https://${normalizeDomain(companyWebsite)}`,
       companyType,
       companySize,
       role,
@@ -161,7 +174,7 @@ export default function OnboardingPage() {
   const summary = [
     { label: "Found us via", value: referralSource },
     { label: "Company", value: companyName },
-    { label: "Website", value: companyWebsite || "—" },
+    { label: "Website", value: `https://${normalizeDomain(companyWebsite)}` },
     { label: "Type", value: companyType },
     { label: "Size", value: companySize },
     { label: "Role", value: role },
@@ -222,7 +235,9 @@ export default function OnboardingPage() {
                       value={source.value}
                       className="h-auto justify-start gap-3 px-4 py-3.5"
                     >
-                      <source.icon className="text-muted-foreground" />
+                      <source.icon
+                        className={source.brand ? "" : "text-muted-foreground"}
+                      />
                       {source.value}
                     </ToggleGroupItem>
                   ))}
@@ -243,19 +258,25 @@ export default function OnboardingPage() {
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="company-website">
-                      Website{" "}
-                      <span className="font-normal text-muted-foreground">
-                        (optional)
+                    <FieldLabel htmlFor="company-website">Website</FieldLabel>
+                    <div className="flex w-full">
+                      <span className="inline-flex h-8 shrink-0 items-center rounded-l-lg border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground select-none">
+                        https://
                       </span>
-                    </FieldLabel>
-                    <Input
-                      id="company-website"
-                      type="url"
-                      value={companyWebsite}
-                      onChange={(e) => setCompanyWebsite(e.target.value)}
-                      placeholder="https://acme.com"
-                    />
+                      <Input
+                        id="company-website"
+                        value={companyWebsite}
+                        onChange={(e) =>
+                          // Strip a pasted scheme/www — the prefix is fixed.
+                          setCompanyWebsite(
+                            e.target.value.replace(/^https?:\/\/(www\.)?/i, "")
+                          )
+                        }
+                        placeholder="acme.com"
+                        required
+                        className="rounded-l-none"
+                      />
+                    </div>
                     <FieldDescription>
                       We&apos;ll use it to analyze your visibility.
                     </FieldDescription>

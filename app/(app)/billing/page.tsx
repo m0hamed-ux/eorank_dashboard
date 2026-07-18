@@ -10,7 +10,7 @@ import {
 } from "lucide-react"
 
 // TODO: replace mock data with GET /api/v1/billing (subscription, usage, payment method, invoices)
-// once the FastAPI backend + Stripe integration exist.
+// once the FastAPI backend + Dodo Payments integration exist.
 import {
   getPlan,
   INVOICES,
@@ -21,6 +21,7 @@ import {
   type Plan,
   type Subscription,
 } from "@/lib/billing"
+import { AdminOnly } from "@/components/admin-only"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -127,7 +128,7 @@ function UsageMeter({
   )
 }
 
-export default function BillingPage() {
+function BillingContent() {
   const currentPlan = getPlan(SUBSCRIPTION.planId)
   const status = SUBSCRIPTION_STATUS[SUBSCRIPTION.status]
   const renewsOn = dateFormatter.format(new Date(SUBSCRIPTION.renewsAt))
@@ -140,12 +141,12 @@ export default function BillingPage() {
     planDialog !== null && planDialog.priceMonthly > currentPlan.priceMonthly
 
   function confirmPlanChange() {
-    // TODO: POST /api/v1/billing/plan { planId } — Stripe subscription update + proration.
+    // TODO: POST /api/v1/billing/plan { planId } — Dodo Payments subscription change-plan (supports proration).
     setPlanDialog(null)
   }
 
   function confirmCancel() {
-    // TODO: DELETE /api/v1/billing/subscription — cancels at period end via Stripe.
+    // TODO: DELETE /api/v1/billing/subscription — cancels at next billing date via Dodo Payments.
     setCancelOpen(false)
   }
 
@@ -314,7 +315,7 @@ export default function BillingPage() {
                 </span>
               </div>
             </div>
-            {/* TODO: open a Stripe SetupIntent flow to update the card. */}
+            {/* TODO: link to the Dodo Payments customer portal to update the card. */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" aria-disabled className="opacity-50">
@@ -380,7 +381,7 @@ export default function BillingPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="pr-4 text-right">
-                          {/* TODO: GET /api/v1/billing/invoices/{id}/pdf (Stripe hosted invoice URL) */}
+                          {/* TODO: GET /api/v1/billing/invoices/{id}/pdf (Dodo Payments hosted invoice URL) */}
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
@@ -467,5 +468,15 @@ export default function BillingPage() {
         </DialogContent>
       </Dialog>
     </>
+  )
+}
+
+export default function BillingPage() {
+  // Billing is admin-only: plan changes, payment methods, and invoices are
+  // workspace-level actions. Backend will enforce the same rule from the JWT.
+  return (
+    <AdminOnly>
+      <BillingContent />
+    </AdminOnly>
   )
 }

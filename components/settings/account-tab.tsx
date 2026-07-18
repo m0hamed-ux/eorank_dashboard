@@ -31,7 +31,7 @@ export function AccountTab() {
           // Drop Clerk's own outer card so it inherits our tab surface.
           rootBox: "w-full",
           cardBox:
-            "w-full max-w-none rounded-xl border border-border bg-card shadow-xs",
+            "w-full max-w-none rounded-xl border border-border bg-card ring-1 ring-foreground/10",
           navbar: "border-border",
           footer: "hidden",
         },

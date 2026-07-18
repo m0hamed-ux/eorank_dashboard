@@ -33,10 +33,10 @@ export default async function AppLayout({
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 bg-white">
             <PageTitle />
           </header>
-          <div className="flex flex-1 flex-col gap-4 p-4">{children}</div>
+          <div className="flex flex-1 flex-col gap-4 p-4 bg-white">{children}</div>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

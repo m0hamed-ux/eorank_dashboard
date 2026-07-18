@@ -14,6 +14,7 @@ export type OnboardingAnswers = {
 const REQUIRED_FIELDS: (keyof OnboardingAnswers)[] = [
   "referralSource",
   "companyName",
+  "companyWebsite",
   "companyType",
   "companySize",
   "role",

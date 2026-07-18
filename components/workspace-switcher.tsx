@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { useUser } from "@clerk/nextjs"
+import { useOrganization, useOrganizationList } from "@clerk/nextjs"
 import { Building2, Check, ChevronsUpDown, Plus } from "lucide-react"
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -29,32 +30,40 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { Spinner } from "@/components/ui/spinner"
 
+// Real Clerk organizations: the active org IS the tenant (org_id) the backend
+// will scope every query by. Switching orgs switches the whole workspace.
 export function WorkspaceSwitcher() {
-  const { user } = useUser()
+  const { organization: activeOrg } = useOrganization()
+  const { isLoaded, userMemberships, setActive, createOrganization } =
+    useOrganizationList({ userMemberships: { infinite: true } })
 
-  const defaultName =
-    (user?.publicMetadata?.companyName as string | undefined) || "My workspace"
-
-  const [workspaces, setWorkspaces] = React.useState<string[]>([])
-  const [active, setActive] = React.useState(defaultName)
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [newName, setNewName] = React.useState("")
+  const [creating, setCreating] = React.useState(false)
 
-  // Seed from the onboarding company name once the user loads.
-  React.useEffect(() => {
-    setWorkspaces((prev) => (prev.length === 0 ? [defaultName] : prev))
-    setActive((prev) => (prev === "My workspace" ? defaultName : prev))
-  }, [defaultName])
+  const memberships = userMemberships?.data ?? []
 
-  function addWorkspace(event: React.FormEvent<HTMLFormElement>) {
+  async function switchTo(orgId: string) {
+    if (!isLoaded) return
+    await setActive({ organization: orgId })
+  }
+
+  async function addWorkspace(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const name = newName.trim()
-    if (!name) return
-    setWorkspaces((prev) => (prev.includes(name) ? prev : [...prev, name]))
-    setActive(name)
-    setNewName("")
-    setDialogOpen(false)
+    if (!isLoaded || !name) return
+    setCreating(true)
+    try {
+      const org = await createOrganization({ name })
+      await setActive({ organization: org.id })
+      await userMemberships?.revalidate?.()
+      setNewName("")
+      setDialogOpen(false)
+    } finally {
+      setCreating(false)
+    }
   }
 
   return (
@@ -66,14 +75,23 @@ export function WorkspaceSwitcher() {
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg border bg-sidebar-accent">
-                <Building2 className="size-4" />
-              </div>
+              {activeOrg ? (
+                <Avatar className="size-8 rounded-lg">
+                  <AvatarImage src={activeOrg.imageUrl} alt={activeOrg.name} />
+                  <AvatarFallback className="rounded-lg">
+                    {activeOrg.name.slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              ) : (
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg border bg-sidebar-accent">
+                  <Building2 className="size-4" />
+                </div>
+              )}
               <div className="flex flex-col gap-0.5 leading-none text-left">
-                <span className="truncate font-medium">{active}</span>
-                <span className="text-xs text-muted-foreground">
-                  Workspace
+                <span className="truncate font-medium">
+                  {activeOrg?.name ?? "No workspace"}
                 </span>
+                <span className="text-xs text-muted-foreground">Workspace</span>
               </div>
               <ChevronsUpDown className="ml-auto size-4" />
             </SidebarMenuButton>
@@ -88,18 +106,31 @@ export function WorkspaceSwitcher() {
               Workspaces
             </DropdownMenuLabel>
             <DropdownMenuGroup>
-              {workspaces.map((workspace) => (
-                <DropdownMenuItem
-                  key={workspace}
-                  onClick={() => setActive(workspace)}
-                >
-                  <div className="flex size-6 items-center justify-center rounded-md border">
-                    <Building2 className="size-3.5" />
-                  </div>
-                  <span className="truncate">{workspace}</span>
-                  {workspace === active && <Check className="ml-auto" />}
+              {memberships.map((membership) => {
+                const org = membership.organization
+                return (
+                  <DropdownMenuItem
+                    key={org.id}
+                    onClick={() => switchTo(org.id)}
+                  >
+                    <Avatar className="size-6 rounded-md">
+                      <AvatarImage src={org.imageUrl} alt={org.name} />
+                      <AvatarFallback className="rounded-md text-[10px]">
+                        {org.name.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="truncate">{org.name}</span>
+                    {org.id === activeOrg?.id && <Check className="ml-auto" />}
+                  </DropdownMenuItem>
+                )
+              })}
+              {isLoaded && memberships.length === 0 && (
+                <DropdownMenuItem disabled>
+                  <span className="text-muted-foreground">
+                    No workspaces yet
+                  </span>
                 </DropdownMenuItem>
-              ))}
+              )}
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setDialogOpen(true)}>
@@ -118,6 +149,7 @@ export function WorkspaceSwitcher() {
                 <DialogTitle>Add workspace</DialogTitle>
                 <DialogDescription>
                   Create a new workspace to track another brand or site.
+                  You&apos;ll be its admin.
                 </DialogDescription>
               </DialogHeader>
               <Field>
@@ -131,8 +163,12 @@ export function WorkspaceSwitcher() {
                 />
               </Field>
               <DialogFooter>
-                <Button type="submit" disabled={!newName.trim()}>
-                  <Plus data-icon="inline-start" />
+                <Button type="submit" disabled={creating || !newName.trim()}>
+                  {creating ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <Plus data-icon="inline-start" />
+                  )}
                   Create workspace
                 </Button>
               </DialogFooter>

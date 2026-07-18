@@ -134,4 +134,11 @@
   html {
     @apply font-sans;
   }
+  .cl-cardBox {
+    box-shadow: none !important;
+    border: 2px solid var(--border) !important;
+  }
+  .cl-footerItem{
+    display: none !important;
+  }
 }

@@ -17,9 +17,11 @@ import {
   Quote,
   Settings,
   Swords,
+  Users,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { useOrgRole } from "@/hooks/use-org-role"
 
 import {
   Avatar,
@@ -49,7 +51,7 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar"
-import { WorkspaceSwitcher } from "@/components/workspace-switcher"
+import { BrandSwitcher } from "@/components/brand-switcher"
 
 const navMain = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -61,8 +63,10 @@ const navMain = [
 ]
 
 const navSecondary = [
+  { title: "Team", url: "/team", icon: Users },
   { title: "Settings", url: "/settings", icon: Settings },
-  { title: "Billing", url: "/billing", icon: CreditCard },
+  // Billing is admin-only — filtered in the component.
+  { title: "Billing", url: "/billing", icon: CreditCard, adminOnly: true },
   { title: "Support", url: "#", icon: LifeBuoy },
 ]
 
@@ -70,6 +74,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const { user: clerkUser } = useUser()
   const { signOut } = useClerk()
+  const { isAdmin } = useOrgRole()
+
+  const secondaryItems = navSecondary.filter(
+    (item) => !item.adminOnly || isAdmin
+  )
 
   const user = {
     name: clerkUser?.fullName ?? clerkUser?.firstName ?? "Account",
@@ -105,7 +114,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
             </div>
           </SidebarMenuItem>
         </SidebarMenu>
-        <WorkspaceSwitcher />
+        <BrandSwitcher />
       </SidebarHeader>
 
       <SidebarContent>
@@ -149,7 +158,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup className="mt-auto">
           <SidebarGroupContent>
             <SidebarMenu>
-              {navSecondary.map((item) => {
+              {secondaryItems.map((item) => {
                 const isActive = pathname === item.url
                 return (
                   <SidebarMenuItem key={item.title}>
@@ -223,12 +232,14 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
                       Account
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
-                    <Link href="/billing">
-                      <CreditCard />
-                      Billing
-                    </Link>
-                  </DropdownMenuItem>
+                  {isAdmin && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/billing">
+                        <CreditCard />
+                        Billing
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
