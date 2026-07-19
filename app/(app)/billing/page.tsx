@@ -76,6 +76,11 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 })
 
+// null price = custom / contact-sales tier (Scale).
+function formatPrice(price: number | null): string {
+  return price === null ? "Custom" : currency.format(price)
+}
+
 type BadgeVariant = React.ComponentProps<typeof Badge>["variant"]
 
 const SUBSCRIPTION_STATUS: Record<
@@ -137,8 +142,11 @@ function BillingContent() {
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [planDialog, setPlanDialog] = React.useState<Plan | null>(null)
 
+  // null price = Scale (contact sales) — moving to it is always an "upgrade".
   const isUpgrade =
-    planDialog !== null && planDialog.priceMonthly > currentPlan.priceMonthly
+    planDialog !== null &&
+    (planDialog.priceMonthly === null ||
+      planDialog.priceMonthly > (currentPlan.priceMonthly ?? Infinity))
 
   function confirmPlanChange() {
     // TODO: POST /api/v1/billing/plan { planId } — Dodo Payments subscription change-plan (supports proration).
@@ -186,7 +194,7 @@ function BillingContent() {
           <CardContent className="flex flex-col gap-1">
             <div className="flex items-baseline gap-1">
               <span className="font-mono text-4xl font-semibold tracking-tight tabular-nums">
-                {currency.format(currentPlan.priceMonthly)}
+                {formatPrice(currentPlan.priceMonthly)}
               </span>
               <span className="text-sm text-muted-foreground">/mo</span>
             </div>
@@ -248,10 +256,18 @@ function BillingContent() {
               </CardHeader>
               <CardContent className="flex flex-1 flex-col gap-4">
                 <div className="flex items-baseline gap-1">
-                  <span className="font-mono text-4xl font-semibold tracking-tight tabular-nums">
-                    {currency.format(plan.priceMonthly)}
-                  </span>
-                  <span className="text-xs text-muted-foreground">/mo</span>
+                  {plan.priceMonthly === null ? (
+                    <span className="text-sm font-medium text-muted-foreground">
+                      Contact sales
+                    </span>
+                  ) : (
+                    <>
+                      <span className="font-mono text-4xl font-semibold tracking-tight tabular-nums">
+                        {currency.format(plan.priceMonthly)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">/mo</span>
+                    </>
+                  )}
                 </div>
                 <ul className="flex flex-col gap-2">
                   {plan.features.map((feature) => (
@@ -269,13 +285,20 @@ function BillingContent() {
                     <Button variant="outline" className="w-full" disabled>
                       Current plan
                     </Button>
+                  ) : plan.priceMonthly === null ? (
+                    <Button variant="outline" className="w-full" asChild>
+                      {/* Custom pricing — no self-serve change dialog. */}
+                      <a href="mailto:sales@eorank.com?subject=EORank%20Scale%20plan">
+                        Contact sales
+                      </a>
+                    </Button>
                   ) : (
                     <Button
                       variant="outline"
                       className="w-full"
                       onClick={() => setPlanDialog(plan)}
                     >
-                      {plan.priceMonthly > currentPlan.priceMonthly
+                      {plan.priceMonthly > (currentPlan.priceMonthly ?? 0)
                         ? "Upgrade"
                         : "Downgrade"}
                     </Button>
@@ -446,11 +469,11 @@ function BillingContent() {
                 <DialogDescription>
                   Your subscription changes from {currentPlan.name} (
                   <span className="font-mono tabular-nums">
-                    {currency.format(currentPlan.priceMonthly)}
+                    {formatPrice(currentPlan.priceMonthly)}
                   </span>
                   /mo) to {planDialog.name} (
                   <span className="font-mono tabular-nums">
-                    {currency.format(planDialog.priceMonthly)}
+                    {formatPrice(planDialog.priceMonthly)}
                   </span>
                   /mo). The new limits apply at the next billing cycle.
                 </DialogDescription>

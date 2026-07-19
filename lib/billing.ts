@@ -6,7 +6,7 @@ export type PlanId = "free" | "starter" | "growth" | "scale"
 export interface Plan {
   id: PlanId
   name: string
-  priceMonthly: number
+  priceMonthly: number | null // null = contact sales
   tagline: string
   promptsPerMonth: number
   trackedCompanies: number
@@ -14,6 +14,12 @@ export interface Plan {
   providers: number
   features: string[]
   popular?: boolean
+  // Feature gates (docs/plans.md feature matrix).
+  hasEnhancementTips: boolean
+  hasWeeklyAudit: boolean
+  hasScheduledJobs: boolean
+  hasApiAccess: boolean
+  hasRawResponses: boolean
 }
 
 export const PLANS: Plan[] = [
@@ -22,16 +28,21 @@ export const PLANS: Plan[] = [
     name: "Free",
     priceMonthly: 0,
     tagline: "Try AI visibility tracking",
-    promptsPerMonth: 50,
+    promptsPerMonth: 20,
     trackedCompanies: 1,
-    concurrentJobs: 1,
+    concurrentJobs: 2,
     providers: 2,
     features: [
-      "50 prompts / month",
+      "20 prompts / month",
       "1 tracked company",
       "2 AI providers",
       "7-day history",
     ],
+    hasEnhancementTips: false,
+    hasWeeklyAudit: false,
+    hasScheduledJobs: false,
+    hasApiAccess: false,
+    hasRawResponses: false,
   },
   {
     id: "starter",
@@ -48,7 +59,14 @@ export const PLANS: Plan[] = [
       "All 4 AI providers",
       "30-day history",
       "Competitor tracking",
+      "Enhancement tips",
+      "Weekly score audit",
     ],
+    hasEnhancementTips: true,
+    hasWeeklyAudit: true,
+    hasScheduledJobs: false,
+    hasApiAccess: false,
+    hasRawResponses: false,
   },
   {
     id: "growth",
@@ -67,28 +85,38 @@ export const PLANS: Plan[] = [
       "1-year history",
       "Competitor tracking",
       "Scheduled jobs",
-      "API access",
+      "Raw response storage",
     ],
+    hasEnhancementTips: true,
+    hasWeeklyAudit: true,
+    hasScheduledJobs: true,
+    hasApiAccess: false,
+    hasRawResponses: true,
   },
   {
     id: "scale",
     name: "Scale",
-    priceMonthly: 449,
+    priceMonthly: null, // Contact sales
     tagline: "For agencies & large brands",
     promptsPerMonth: 25000,
     trackedCompanies: 50,
     concurrentJobs: 20,
     providers: 4,
     features: [
-      "25,000 prompts / month",
-      "50 tracked companies",
+      "25,000+ prompts / month",
+      "50+ tracked companies",
       "All 4 AI providers",
       "Unlimited history",
-      "Competitor tracking",
+      "API access",
       "Scheduled jobs",
-      "Priority support",
       "SSO & audit logs",
+      "Priority support + onboarding",
     ],
+    hasEnhancementTips: true,
+    hasWeeklyAudit: true,
+    hasScheduledJobs: true,
+    hasApiAccess: true,
+    hasRawResponses: true,
   },
 ]
 
