@@ -274,10 +274,11 @@ export default function OnboardingPage() {
       }
     }
 
-    // Refresh the session token and the client-side user object,
-    // then do a full navigation so nothing stale is reused.
+    // Refresh the session token and the client-side user object, then do a
+    // full navigation so nothing stale is reused. The org is on the Free plan
+    // already (backend get_or_create) — /choose-plan offers the paid tiers.
     await user?.reload()
-    window.location.assign("/")
+    window.location.assign("/choose-plan")
   }
 
   const summary = [

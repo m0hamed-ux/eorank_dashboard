@@ -7,6 +7,7 @@ export interface Plan {
   id: PlanId
   name: string
   priceMonthly: number | null // null = contact sales
+  priceYearly: number | null // billed once per year (2 months free); null = contact sales
   tagline: string
   promptsPerMonth: number
   trackedCompanies: number
@@ -27,6 +28,7 @@ export const PLANS: Plan[] = [
     id: "free",
     name: "Free",
     priceMonthly: 0,
+    priceYearly: 0,
     tagline: "Try AI visibility tracking",
     promptsPerMonth: 20,
     trackedCompanies: 1,
@@ -48,6 +50,7 @@ export const PLANS: Plan[] = [
     id: "starter",
     name: "Starter",
     priceMonthly: 49,
+    priceYearly: 490, // 2 months free
     tagline: "For solo founders & small sites",
     promptsPerMonth: 1000,
     trackedCompanies: 3,
@@ -72,6 +75,7 @@ export const PLANS: Plan[] = [
     id: "growth",
     name: "Growth",
     priceMonthly: 149,
+    priceYearly: 1490, // 2 months free
     tagline: "For growing marketing teams",
     promptsPerMonth: 5000,
     trackedCompanies: 10,
@@ -97,6 +101,7 @@ export const PLANS: Plan[] = [
     id: "scale",
     name: "Scale",
     priceMonthly: null, // Contact sales
+    priceYearly: null,
     tagline: "For agencies & large brands",
     promptsPerMonth: 25000,
     trackedCompanies: 50,
