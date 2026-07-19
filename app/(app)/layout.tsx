@@ -8,6 +8,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PageTitle } from "@/components/page-title";
+import { QueryProvider } from "@/components/query-provider";
 
 export default async function AppLayout({
   children,
@@ -29,16 +30,18 @@ export default async function AppLayout({
   }
 
   return (
-    <TooltipProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        <SidebarInset>
-          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 bg-white">
-            <PageTitle />
-          </header>
-          <div className="flex flex-1 flex-col gap-4 p-4 bg-white">{children}</div>
-        </SidebarInset>
-      </SidebarProvider>
-    </TooltipProvider>
+    <QueryProvider>
+      <TooltipProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          <SidebarInset>
+            <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4 bg-white">
+              <PageTitle />
+            </header>
+            <div className="flex flex-1 flex-col gap-4 p-4 bg-white">{children}</div>
+          </SidebarInset>
+        </SidebarProvider>
+      </TooltipProvider>
+    </QueryProvider>
   );
 }

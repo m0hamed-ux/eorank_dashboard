@@ -2,16 +2,21 @@
 
 import * as React from "react"
 import Image from "next/image"
-import { useUser } from "@clerk/nextjs"
+import { useOrganization, useOrganizationList, useUser } from "@clerk/nextjs"
 import {
   ArrowLeft,
   ArrowRight,
   Ellipsis,
+  Globe,
   Newspaper,
+  PencilLine,
   Sparkles,
   UsersRound,
 } from "lucide-react"
 
+import { ApiError, type CompanyType } from "@/lib/api"
+import { cn } from "@/lib/utils"
+import { useApi } from "@/hooks/use-api"
 import {
   GoogleLogo,
   LinkedInLogo,
@@ -51,6 +56,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 import { completeOnboarding } from "./_actions"
+import { fetchSiteMetadata } from "./_metadata"
 
 // Brand sources use the real logo; generic sources keep a muted lucide icon.
 const REFERRAL_SOURCES = [
@@ -64,16 +70,15 @@ const REFERRAL_SOURCES = [
   { value: "Other", icon: Ellipsis, brand: false },
 ]
 
-const COMPANY_TYPES = [
-  "SaaS",
-  "E-commerce",
-  "Agency",
-  "Media / Publisher",
-  "Local business",
-  "Other",
+// Values mirror the backend CompanyType enum.
+const COMPANY_TYPES: { value: CompanyType; label: string }[] = [
+  { value: "saas", label: "SaaS" },
+  { value: "ecommerce", label: "E-commerce" },
+  { value: "agency", label: "Agency" },
+  { value: "media", label: "Media / Publisher" },
+  { value: "local", label: "Local business" },
+  { value: "other", label: "Other" },
 ]
-
-const COMPANY_SIZES = ["1-10", "11-50", "51-200", "201-1000", "1000+"]
 
 const ROLES = [
   "Founder / CEO",
@@ -92,7 +97,7 @@ const STEPS = [
   },
   {
     title: "About your company",
-    description: "We'll tailor the analysis to your business.",
+    description: "We'll fetch the details from your site — you confirm them.",
   },
   {
     title: "What's your role?",
@@ -106,28 +111,69 @@ const STEPS = [
 
 export default function OnboardingPage() {
   const { user } = useUser()
+  const { organization } = useOrganization()
+  const { isLoaded: orgListLoaded, createOrganization, setActive } =
+    useOrganizationList()
+  const api = useApi()
+
   const [step, setStep] = React.useState(0)
   const [pending, setPending] = React.useState(false)
   const [error, setError] = React.useState("")
 
   const [referralSource, setReferralSource] = React.useState("")
-  const [companyName, setCompanyName] = React.useState("")
+
+  // Company step has two phases: enter the URL, then confirm fetched details.
+  const [companyPhase, setCompanyPhase] = React.useState<"url" | "details">(
+    "url"
+  )
+  const [fetching, setFetching] = React.useState(false)
+  const [fetchFailed, setFetchFailed] = React.useState(false)
   const [companyWebsite, setCompanyWebsite] = React.useState("")
-  const [companyType, setCompanyType] = React.useState("")
-  const [companySize, setCompanySize] = React.useState("")
+  const [companyName, setCompanyName] = React.useState("")
+  const [companyDescription, setCompanyDescription] = React.useState("")
+  const [companyLogo, setCompanyLogo] = React.useState<string | null>(null)
+  const [companyType, setCompanyType] = React.useState<CompanyType | "">("")
+
   const [role, setRole] = React.useState("")
+
+  const domainValid = isValidDomain(normalizeDomain(companyWebsite))
 
   const stepValid = [
     referralSource !== "",
-    companyName.trim() !== "" &&
-      isValidDomain(normalizeDomain(companyWebsite)) &&
-      companyType !== "" &&
-      companySize !== "",
+    companyPhase === "url"
+      ? domainValid
+      : companyName.trim() !== "" && companyType !== "",
     role !== "",
     true,
   ][step]
 
   const isLast = step === STEPS.length - 1
+
+  async function fetchDetails() {
+    setError("")
+    setFetching(true)
+    const result = await fetchSiteMetadata(companyWebsite)
+    setFetching(false)
+
+    if (!result.ok) {
+      setError(result.error)
+      setFetchFailed(true)
+      return
+    }
+
+    setFetchFailed(false)
+    setCompanyName(result.title)
+    setCompanyDescription(result.description)
+    setCompanyLogo(result.image)
+    setCompanyPhase("details")
+  }
+
+  function enterDetailsManually() {
+    setError("")
+    setFetchFailed(false)
+    setCompanyLogo(null)
+    setCompanyPhase("details")
+  }
 
   function next() {
     setError("")
@@ -136,33 +182,74 @@ export default function OnboardingPage() {
 
   function back() {
     setError("")
+    if (step === 1 && companyPhase === "details") {
+      setCompanyPhase("url")
+      return
+    }
     setStep((s) => Math.max(s - 1, 0))
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!stepValid || pending || fetching) return
+
+    if (step === 1 && companyPhase === "url") {
+      await fetchDetails()
+      return
+    }
+
     if (!isLast) {
-      if (stepValid) next()
+      next()
       return
     }
 
     setError("")
     setPending(true)
 
+    const domain = normalizeDomain(companyWebsite)
+
+    // 1. Persist the questionnaire to Clerk user metadata.
     const res = await completeOnboarding({
       referralSource,
       companyName,
-      // The https:// prefix is fixed in the UI; store the full URL.
-      companyWebsite: `https://${normalizeDomain(companyWebsite)}`,
+      companyWebsite: `https://${domain}`,
       companyType,
-      companySize,
       role,
     })
-
     if (res.error) {
       setError(res.error)
       setPending(false)
       return
+    }
+
+    try {
+      // 2. The backend scopes everything to a Clerk org — make sure one is
+      //    active (the user just signed up, so usually none exists yet).
+      if (!organization && orgListLoaded) {
+        const org = await createOrganization({ name: companyName.trim() })
+        await setActive({ organization: org.id })
+      }
+
+      // 3. Save the company to the EORank backend (Postgres).
+      await api.companies.create({
+        name: companyName.trim(),
+        domain,
+        description: companyDescription.trim() || null,
+        type: companyType || "other",
+        aliases: [],
+        logo_url: companyLogo,
+      })
+    } catch (err) {
+      // Already tracked (409) → onboarding was retried; that's fine.
+      if (!(err instanceof ApiError && err.status === 409)) {
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : "Could not save your company. Please try again."
+        )
+        setPending(false)
+        return
+      }
     }
 
     // Refresh the session token and the client-side user object,
@@ -175,8 +262,10 @@ export default function OnboardingPage() {
     { label: "Found us via", value: referralSource },
     { label: "Company", value: companyName },
     { label: "Website", value: `https://${normalizeDomain(companyWebsite)}` },
-    { label: "Type", value: companyType },
-    { label: "Size", value: companySize },
+    {
+      label: "Type",
+      value: COMPANY_TYPES.find((t) => t.value === companyType)?.label ?? "—",
+    },
     { label: "Role", value: role },
   ]
 
@@ -218,7 +307,7 @@ export default function OnboardingPage() {
 
           <CardContent>
             <div
-              key={step}
+              key={`${step}-${companyPhase}`}
               className="animate-in fade-in-0 slide-in-from-right-4 duration-300"
             >
               {step === 0 && (
@@ -244,8 +333,64 @@ export default function OnboardingPage() {
                 </ToggleGroup>
               )}
 
-              {step === 1 && (
+              {step === 1 && companyPhase === "url" && (
+                <Field>
+                  <FieldLabel htmlFor="company-website">Website</FieldLabel>
+                  <div className="flex w-full">
+                    <span className="inline-flex h-8 shrink-0 items-center rounded-l-lg border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground select-none">
+                      https://
+                    </span>
+                    <Input
+                      id="company-website"
+                      value={companyWebsite}
+                      onChange={(e) => {
+                        setFetchFailed(false)
+                        setCompanyWebsite(
+                          e.target.value.replace(/^https?:\/\/(www\.)?/i, "")
+                        )
+                      }}
+                      placeholder="acme.com"
+                      required
+                      autoFocus
+                      className="rounded-l-none"
+                    />
+                  </div>
+                  <FieldDescription>
+                    We&apos;ll read your site&apos;s title, description, and
+                    logo — you can adjust them next.
+                  </FieldDescription>
+                </Field>
+              )}
+
+              {step === 1 && companyPhase === "details" && (
                 <FieldGroup>
+                  <div className="flex items-center gap-3 rounded-lg border bg-muted/40 px-3 py-2.5">
+                    {companyLogo ? (
+                      // Arbitrary external hosts — next/image needs an allowlist,
+                      // so the preview uses a plain img on purpose.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={companyLogo}
+                        alt="Site preview"
+                        className="size-10 shrink-0 rounded-md border object-cover"
+                      />
+                    ) : (
+                      <div className="flex size-10 shrink-0 items-center justify-center rounded-md border bg-background">
+                        <Globe className="size-4 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate text-sm font-medium">
+                        {normalizeDomain(companyWebsite)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {companyLogo
+                          ? "Image from your site — used as your brand logo."
+                          : "No preview image found on your site."}
+                      </span>
+                    </div>
+                  </div>
+
                   <Field>
                     <FieldLabel htmlFor="company-name">Company name</FieldLabel>
                     <Input
@@ -253,68 +398,53 @@ export default function OnboardingPage() {
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                       placeholder="Acme Inc."
+                      maxLength={120}
                       autoFocus
                     />
                   </Field>
 
                   <Field>
-                    <FieldLabel htmlFor="company-website">Website</FieldLabel>
-                    <div className="flex w-full">
-                      <span className="inline-flex h-8 shrink-0 items-center rounded-l-lg border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground select-none">
-                        https://
-                      </span>
-                      <Input
-                        id="company-website"
-                        value={companyWebsite}
-                        onChange={(e) =>
-                          // Strip a pasted scheme/www — the prefix is fixed.
-                          setCompanyWebsite(
-                            e.target.value.replace(/^https?:\/\/(www\.)?/i, "")
-                          )
-                        }
-                        placeholder="acme.com"
-                        required
-                        className="rounded-l-none"
-                      />
-                    </div>
+                    <FieldLabel htmlFor="company-description">
+                      Description
+                    </FieldLabel>
+                    <textarea
+                      id="company-description"
+                      value={companyDescription}
+                      onChange={(e) => setCompanyDescription(e.target.value)}
+                      placeholder="What does your company do?"
+                      maxLength={2000}
+                      rows={3}
+                      className={cn(
+                        "w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1.5 text-base transition-colors outline-none",
+                        "placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 md:text-sm dark:bg-input/30"
+                      )}
+                    />
                     <FieldDescription>
-                      We&apos;ll use it to analyze your visibility.
+                      Used to generate realistic prompts for your niche.
                     </FieldDescription>
                   </Field>
 
                   <Field>
                     <FieldLabel>Company type</FieldLabel>
-                    <Select value={companyType} onValueChange={setCompanyType}>
+                    <Select
+                      value={companyType}
+                      onValueChange={(value) =>
+                        setCompanyType(value as CompanyType)
+                      }
+                    >
                       <SelectTrigger>
                         <SelectValue placeholder="Select a type" />
                       </SelectTrigger>
                       <SelectContent>
                         <SelectGroup>
                           {COMPANY_TYPES.map((type) => (
-                            <SelectItem key={type} value={type}>
-                              {type}
+                            <SelectItem key={type.value} value={type.value}>
+                              {type.label}
                             </SelectItem>
                           ))}
                         </SelectGroup>
                       </SelectContent>
                     </Select>
-                  </Field>
-
-                  <Field>
-                    <FieldLabel>Company size</FieldLabel>
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      value={companySize}
-                      onValueChange={(value) => value && setCompanySize(value)}
-                      className="grid w-full grid-cols-3 gap-2.5 sm:grid-cols-5"
-                    >
-                      {COMPANY_SIZES.map((size) => (
-                        <ToggleGroupItem key={size} value={size}>
-                          {size}
-                        </ToggleGroupItem>
-                      ))}
-                    </ToggleGroup>
                   </Field>
                 </FieldGroup>
               )}
@@ -363,8 +493,18 @@ export default function OnboardingPage() {
               )}
             </div>
 
-            {error && (
-              <FieldError className="mt-4">{error}</FieldError>
+            {error && <FieldError className="mt-4">{error}</FieldError>}
+            {fetchFailed && step === 1 && companyPhase === "url" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-2"
+                onClick={enterDetailsManually}
+              >
+                <PencilLine data-icon="inline-start" />
+                Fill in the details manually
+              </Button>
             )}
           </CardContent>
 
@@ -374,7 +514,7 @@ export default function OnboardingPage() {
               variant="ghost"
               onClick={back}
               className={step === 0 ? "invisible" : ""}
-              disabled={pending}
+              disabled={pending || fetching}
             >
               <ArrowLeft data-icon="inline-start" />
               Back
@@ -390,9 +530,10 @@ export default function OnboardingPage() {
                 Test your first prompts
               </Button>
             ) : (
-              <Button type="submit" disabled={!stepValid}>
+              <Button type="submit" disabled={!stepValid || fetching}>
+                {fetching && <Spinner data-icon="inline-start" />}
                 Next
-                <ArrowRight data-icon="inline-end" />
+                {!fetching && <ArrowRight data-icon="inline-end" />}
               </Button>
             )}
           </CardFooter>

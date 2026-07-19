@@ -7,7 +7,6 @@ export type OnboardingAnswers = {
   companyName: string
   companyWebsite: string
   companyType: string
-  companySize: string
   role: string
 }
 
@@ -16,7 +15,6 @@ const REQUIRED_FIELDS: (keyof OnboardingAnswers)[] = [
   "companyName",
   "companyWebsite",
   "companyType",
-  "companySize",
   "role",
 ]
 
@@ -43,7 +41,6 @@ export async function completeOnboarding(answers: OnboardingAnswers) {
         companyName: answers.companyName.trim(),
         companyWebsite: answers.companyWebsite.trim(),
         companyType: answers.companyType.trim(),
-        companySize: answers.companySize.trim(),
         role: answers.role.trim(),
       },
     })
