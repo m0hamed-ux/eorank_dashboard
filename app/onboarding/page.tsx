@@ -12,6 +12,7 @@ import {
   PencilLine,
   Sparkles,
   UsersRound,
+  X,
 } from "lucide-react"
 
 import { ApiError, type CompanyType } from "@/lib/api"
@@ -133,6 +134,8 @@ export default function OnboardingPage() {
   const [companyDescription, setCompanyDescription] = React.useState("")
   const [companyLogo, setCompanyLogo] = React.useState<string | null>(null)
   const [companyType, setCompanyType] = React.useState<CompanyType | "">("")
+  const [companyAliases, setCompanyAliases] = React.useState<string[]>([])
+  const [aliasDraft, setAliasDraft] = React.useState("")
 
   const [role, setRole] = React.useState("")
 
@@ -165,6 +168,7 @@ export default function OnboardingPage() {
     setCompanyName(result.title)
     setCompanyDescription(result.description)
     setCompanyLogo(result.image)
+    setCompanyAliases(result.aliases)
     setCompanyPhase("details")
   }
 
@@ -172,7 +176,25 @@ export default function OnboardingPage() {
     setError("")
     setFetchFailed(false)
     setCompanyLogo(null)
+    const label = normalizeDomain(companyWebsite).split(".")[0]
+    setCompanyAliases(label && label.length >= 2 ? [label] : [])
     setCompanyPhase("details")
+  }
+
+  function addAlias() {
+    const alias = aliasDraft.trim().slice(0, 50)
+    if (!alias) return
+    if (companyAliases.length >= 10) return
+    if (companyAliases.some((a) => a.toLowerCase() === alias.toLowerCase())) {
+      setAliasDraft("")
+      return
+    }
+    setCompanyAliases((prev) => [...prev, alias])
+    setAliasDraft("")
+  }
+
+  function removeAlias(alias: string) {
+    setCompanyAliases((prev) => prev.filter((a) => a !== alias))
   }
 
   function next() {
@@ -236,7 +258,7 @@ export default function OnboardingPage() {
         domain,
         description: companyDescription.trim() || null,
         type: companyType || "other",
-        aliases: [],
+        aliases: companyAliases,
         logo_url: companyLogo,
       })
     } catch (err) {
@@ -385,8 +407,8 @@ export default function OnboardingPage() {
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {companyLogo
-                          ? "Image from your site — used as your brand logo."
-                          : "No preview image found on your site."}
+                          ? "Icon from your site — used as your brand logo."
+                          : "No icon found on your site."}
                       </span>
                     </div>
                   </div>
@@ -445,6 +467,57 @@ export default function OnboardingPage() {
                         </SelectGroup>
                       </SelectContent>
                     </Select>
+                  </Field>
+
+                  <Field>
+                    <FieldLabel htmlFor="company-alias">Brand aliases</FieldLabel>
+                    {companyAliases.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {companyAliases.map((alias) => (
+                          <span
+                            key={alias}
+                            className="inline-flex items-center gap-1 rounded-full border py-0.5 pr-1 pl-2.5 text-xs font-medium"
+                          >
+                            {alias}
+                            <button
+                              type="button"
+                              aria-label={`Remove alias ${alias}`}
+                              onClick={() => removeAlias(alias)}
+                              className="relative flex size-4 items-center justify-center rounded-full text-muted-foreground transition-colors after:absolute after:-inset-2 hover:bg-muted hover:text-foreground"
+                            >
+                              <X className="size-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Input
+                        id="company-alias"
+                        value={aliasDraft}
+                        onChange={(e) => setAliasDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            addAlias()
+                          }
+                        }}
+                        placeholder="Other names for your brand"
+                        maxLength={50}
+                        className="max-w-xs"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={addAlias}
+                        disabled={!aliasDraft.trim() || companyAliases.length >= 10}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    <FieldDescription>
+                      We&apos;ll also count citations that use these names.
+                    </FieldDescription>
                   </Field>
                 </FieldGroup>
               )}

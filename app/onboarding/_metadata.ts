@@ -95,6 +95,7 @@ export type SiteMetadata = {
   description: string
   image: string | null
   domain: string
+  aliases: string[]
 }
 
 export type SiteMetadataError = { ok: false; error: string }
@@ -169,26 +170,101 @@ export async function fetchSiteMetadata(
     ""
   ).slice(0, 2000)
 
-  // og:image — absolutized, then held to the backend's logo rules (https,
-  // public host, no port) so the later POST /companies never 422s on it.
-  let image: string | null = null
-  const rawImage =
-    metaContent(html, "og:image") ?? metaContent(html, "twitter:image")
-  if (rawImage) {
-    try {
-      const resolved = new URL(rawImage, finalUrl)
-      if (
-        resolved.protocol === "https:" &&
-        resolved.port === "" &&
-        isSafePublicHost(resolved.hostname) &&
-        resolved.href.length <= 2048
-      ) {
-        image = resolved.href
-      }
-    } catch {
-      image = null
+  // Site ICON (favicon family), not og:image — og images are social banners,
+  // the icon is the actual brand mark. Preference: apple-touch-icon (large,
+  // square) > <link rel=icon> with the biggest declared size > /favicon.ico.
+  const image = await pickSiteIcon(html, finalUrl)
+
+  const aliases = suggestAliases({ title, domain })
+
+  return { ok: true, title, description, image, domain, aliases }
+}
+
+function sanitizeIconUrl(raw: string, base: URL): string | null {
+  // Held to the backend's logo rules (https, public host, no port) so the
+  // later POST /companies never 422s on it.
+  try {
+    const resolved = new URL(raw, base)
+    if (
+      resolved.protocol === "https:" &&
+      resolved.port === "" &&
+      isSafePublicHost(resolved.hostname) &&
+      resolved.href.length <= 2048
+    ) {
+      return resolved.href
+    }
+  } catch {
+    // fall through
+  }
+  return null
+}
+
+async function pickSiteIcon(html: string, finalUrl: URL): Promise<string | null> {
+  type Candidate = { url: string; score: number }
+  const candidates: Candidate[] = []
+
+  for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
+    const rel = tag.match(/rel=["']([^"']*)["']/i)?.[1]?.toLowerCase() ?? ""
+    if (!/(^|\s)(icon|shortcut icon|apple-touch-icon(-precomposed)?)(\s|$)/.test(rel)) {
+      continue
+    }
+    const href = tag.match(/href=["']([^"']*)["']/i)?.[1]
+    if (!href) continue
+    const url = sanitizeIconUrl(decodeEntities(href), finalUrl)
+    if (!url) continue
+
+    // Rank: apple-touch-icon (usually 180px) beats rel=icon beats shortcut;
+    // within a rel, the biggest declared size wins.
+    const relScore = rel.includes("apple-touch-icon") ? 3000 : rel === "icon" ? 2000 : 1000
+    const sizes = tag.match(/sizes=["'](\d+)x\d+["']/i)?.[1]
+    candidates.push({ url, score: relScore + Math.min(Number(sizes ?? 0), 999) })
+  }
+
+  if (candidates.length > 0) {
+    candidates.sort((a, b) => b.score - a.score)
+    return candidates[0].url
+  }
+
+  // No declared icon — probe the /favicon.ico convention.
+  const fallback = `https://${finalUrl.hostname}/favicon.ico`
+  try {
+    const probe = await fetch(fallback, {
+      method: "HEAD",
+      signal: AbortSignal.timeout(4000),
+      redirect: "follow",
+      cache: "no-store",
+    })
+    if (probe.ok) return fallback
+  } catch {
+    // unreachable — no icon
+  }
+  return null
+}
+
+function suggestAliases({ title, domain }: { title: string; domain: string }): string[] {
+  const suggestions: string[] = []
+  const seen = new Set<string>()
+  const titleKey = title.trim().toLowerCase()
+
+  const push = (value: string) => {
+    const alias = value.trim().slice(0, 50)
+    const key = alias.toLowerCase()
+    if (alias && key !== titleKey && !seen.has(key)) {
+      seen.add(key)
+      suggestions.push(alias)
     }
   }
 
-  return { ok: true, title, description, image, domain }
+  // "Acme — CRM for teams" → "Acme"
+  const shortName = title.split(/[—–|:•·]/)[0]
+  if (shortName && shortName.trim() !== title.trim()) push(shortName)
+
+  // acme.com → "acme" + "Acme"
+  const label = domain.split(".")[0]
+  if (label && label.length >= 2) {
+    push(label)
+    push(label.charAt(0).toUpperCase() + label.slice(1))
+  }
+
+  return suggestions.slice(0, 5)
 }
