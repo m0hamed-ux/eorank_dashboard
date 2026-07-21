@@ -1,5 +1,6 @@
-// Billing / plan domain data.
-// TODO: replace with GET /api/v1/billing + Dodo Payments once the backend exists.
+// The static plan CATALOG (prices, taglines, feature lists, gates) —
+// display copy that mirrors backend app/core/plans.py. Live subscription
+// state comes from GET /api/v1/billing via hooks/use-billing.ts.
 
 export type PlanId = "free" | "starter" | "growth" | "scale"
 

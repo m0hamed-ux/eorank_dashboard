@@ -105,8 +105,7 @@ function PlanCard({ plan, period }: { plan: Plan; period: Period }) {
     >
       {plan.popular && (
         <div className="absolute inset-x-0 -top-3.5 z-10 flex justify-center">
-          <Badge className="border border-primary/20 bg-primary text-primary-foreground shadow-md">
-            <Sparkles className="size-3" />
+          <Badge className="border border-primary/20 bg-primary text-primary-foreground shadow-md p-1 px-2">
             Most popular
           </Badge>
         </div>

@@ -67,6 +67,42 @@ export interface Page<T> {
   offset: number
 }
 
+// ── Billing (mirrors backend app/schemas/billing.py) ────────────────────────
+
+export type PlanId = "free" | "starter" | "growth" | "scale"
+export type SelfServePlanId = "starter" | "growth"
+export type SubscriptionStatus = "active" | "trialing" | "past_due" | "canceled"
+export type BillingPeriod = "monthly" | "yearly"
+export type InvoiceStatus = "paid" | "open" | "void"
+
+export interface UsageMeterRead {
+  used: number
+  limit: number
+}
+
+export interface QuotaSnapshot {
+  plan_id: PlanId
+  prompts: UsageMeterRead
+  companies: UsageMeterRead
+  concurrent_jobs: { active: number; limit: number }
+}
+
+export interface SubscriptionRead {
+  plan_id: PlanId
+  status: SubscriptionStatus
+  renews_at: string | null // ISO
+  usage: QuotaSnapshot
+}
+
+export interface InvoiceRead {
+  id: string
+  date: string // ISO
+  // Backend Decimal — pydantic serializes it as a string to keep precision.
+  amount: string
+  status: InvoiceStatus
+  description: string | null
+}
+
 // ── Core request helper ──────────────────────────────────────────────────────
 
 type GetToken = () => Promise<string | null>
@@ -145,6 +181,44 @@ export function createApi(getToken: GetToken) {
       },
       get: (id: string) =>
         request<CompanyRead>(getToken, "GET", `/api/v1/companies/${id}`),
+    },
+    billing: {
+      overview: () =>
+        request<SubscriptionRead>(getToken, "GET", "/api/v1/billing"),
+      checkout: (input: { plan_id: SelfServePlanId; period: BillingPeriod }) =>
+        request<{ checkout_url: string }>(
+          getToken,
+          "POST",
+          "/api/v1/billing/checkout",
+          input
+        ),
+      changePlan: (input: { plan_id: SelfServePlanId; period: BillingPeriod }) =>
+        request<{ status: string }>(getToken, "POST", "/api/v1/billing/plan", input),
+      cancel: () =>
+        request<{ status: string }>(
+          getToken,
+          "DELETE",
+          "/api/v1/billing/subscription"
+        ),
+      resume: () =>
+        request<{ status: string }>(
+          getToken,
+          "POST",
+          "/api/v1/billing/subscription/resume"
+        ),
+      portal: () =>
+        request<{ portal_url: string }>(getToken, "POST", "/api/v1/billing/portal"),
+      invoices: (params?: { limit?: number; offset?: number }) => {
+        const query = new URLSearchParams()
+        if (params?.limit) query.set("limit", String(params.limit))
+        if (params?.offset) query.set("offset", String(params.offset))
+        const suffix = query.size ? `?${query}` : ""
+        return request<Page<InvoiceRead>>(
+          getToken,
+          "GET",
+          `/api/v1/billing/invoices${suffix}`
+        )
+      },
     },
   }
 }
