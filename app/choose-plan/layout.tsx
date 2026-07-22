@@ -1,6 +1,8 @@
 import { auth, currentUser } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 
+import { QueryProvider } from "@/components/query-provider"
+
 export default async function ChoosePlanLayout({
   children,
 }: {
@@ -19,8 +21,10 @@ export default async function ChoosePlanLayout({
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-muted/40 px-4 py-10 sm:px-8">
-      {children}
-    </div>
+    <QueryProvider>
+      <div className="flex flex-1 items-center justify-center bg-muted/40 px-4 py-10 sm:px-8">
+        {children}
+      </div>
+    </QueryProvider>
   )
 }

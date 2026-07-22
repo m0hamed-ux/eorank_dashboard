@@ -126,80 +126,18 @@ export const PLANS: Plan[] = [
   },
 ]
 
-export interface Subscription {
-  planId: PlanId
-  status: "active" | "trialing" | "past_due" | "canceled"
-  renewsAt: string // ISO
-  usage: {
-    promptsUsed: number
-    companiesUsed: number
-  }
-}
-
-export interface Invoice {
-  id: string
-  date: string // ISO
-  amount: number
-  status: "paid" | "open" | "void"
-  description: string
-}
-
-export interface PaymentMethod {
-  brand: string
-  last4: string
-  expMonth: number
-  expYear: number
-}
-
-// Current mock account state — on the Growth plan.
-export const SUBSCRIPTION: Subscription = {
-  planId: "growth",
-  status: "active",
-  renewsAt: "2026-08-16T00:00:00Z",
-  usage: {
-    promptsUsed: 3120,
-    companiesUsed: 4,
-  },
-}
-
-export const PAYMENT_METHOD: PaymentMethod = {
-  brand: "Visa",
-  last4: "4242",
-  expMonth: 8,
-  expYear: 2027,
-}
-
-export const INVOICES: Invoice[] = [
-  {
-    id: "in_0072",
-    date: "2026-07-16T00:00:00Z",
-    amount: 149,
-    status: "paid",
-    description: "Growth plan — Jul 2026",
-  },
-  {
-    id: "in_0061",
-    date: "2026-06-16T00:00:00Z",
-    amount: 149,
-    status: "paid",
-    description: "Growth plan — Jun 2026",
-  },
-  {
-    id: "in_0053",
-    date: "2026-05-16T00:00:00Z",
-    amount: 149,
-    status: "paid",
-    description: "Growth plan — May 2026",
-  },
-  {
-    id: "in_0044",
-    date: "2026-04-16T00:00:00Z",
-    amount: 49,
-    status: "paid",
-    description: "Starter plan — Apr 2026",
-  },
-]
-
 export function getPlan(id: PlanId): Plan {
   return PLANS.find((p) => p.id === id) ?? PLANS[0]
+}
+
+/** Mirrors backend QuotaService.get_effective_plan: past_due/canceled orgs
+ * run on Free limits until payment recovers. UI gating only — the backend
+ * re-verifies on every request. */
+export function effectivePlanId(subscription: {
+  plan_id: PlanId
+  status: string
+}): PlanId {
+  return subscription.status === "active" || subscription.status === "trialing"
+    ? subscription.plan_id
+    : "free"
 }

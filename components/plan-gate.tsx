@@ -1,8 +1,11 @@
+"use client"
+
 import * as React from "react"
 import Link from "next/link"
 import { Lock } from "lucide-react"
 
-import { getPlan, SUBSCRIPTION, type PlanId } from "@/lib/billing"
+import { effectivePlanId, getPlan, type PlanId } from "@/lib/billing"
+import { useBilling } from "@/hooks/use-billing"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -11,6 +14,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface PlanGateProps {
   feature:
@@ -38,8 +42,7 @@ const FEATURE_CONFIG = {
   },
   scheduledJobs: {
     title: "Scheduled Jobs",
-    description:
-      "Set up recurring citation tracking jobs on autopilot.",
+    description: "Set up recurring citation tracking jobs on autopilot.",
     requiredPlan: "growth" as PlanId,
     hasFeature: (plan: ReturnType<typeof getPlan>) => plan.hasScheduledJobs,
   },
@@ -59,10 +62,19 @@ const FEATURE_CONFIG = {
   },
 } as const
 
+/** UI gate for tier-locked features, driven by GET /api/v1/billing.
+ * Cosmetic only — the backend's require_feature() enforces the real rule,
+ * so on load errors we fail open (the API would 403 the actual action). */
 export function PlanGate({ feature, children, fallback }: PlanGateProps) {
-  const currentPlan = getPlan(SUBSCRIPTION.planId)
+  const { data, isLoading, isError } = useBilling()
   const config = FEATURE_CONFIG[feature]
-  const hasAccess = config.hasFeature(currentPlan)
+
+  if (isLoading) {
+    return <Skeleton className="h-40 rounded-xl" />
+  }
+
+  const planId = data ? effectivePlanId(data) : "free"
+  const hasAccess = isError || config.hasFeature(getPlan(planId))
 
   if (hasAccess) {
     return <>{children}</>
@@ -85,8 +97,9 @@ export function PlanGate({ feature, children, fallback }: PlanGateProps) {
       </CardHeader>
       <CardContent>
         <p className="mb-4 text-sm text-muted-foreground">
-          Available on the <span className="font-medium">{requiredPlan.name}</span> plan
-          and above.
+          Available on the{" "}
+          <span className="font-medium">{requiredPlan.name}</span> plan and
+          above.
         </p>
         <Button asChild>
           <Link href="/billing">Upgrade plan</Link>

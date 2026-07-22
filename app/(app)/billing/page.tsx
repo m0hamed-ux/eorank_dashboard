@@ -3,24 +3,24 @@
 import * as React from "react"
 import {
   Check,
-  CreditCard,
-  Download,
+  ExternalLink,
   ReceiptText,
+  RefreshCw,
   TriangleAlert,
 } from "lucide-react"
 
-// TODO: replace mock data with GET /api/v1/billing (subscription, usage, payment method, invoices)
-// once the FastAPI backend + Dodo Payments integration exist.
+import { ApiError, type SubscriptionRead } from "@/lib/api"
+import { effectivePlanId, getPlan, PLANS, type Plan } from "@/lib/billing"
+import { cn } from "@/lib/utils"
 import {
-  getPlan,
-  INVOICES,
-  PAYMENT_METHOD,
-  PLANS,
-  SUBSCRIPTION,
-  type Invoice,
-  type Plan,
-  type Subscription,
-} from "@/lib/billing"
+  useBilling,
+  useCancelSubscription,
+  useChangePlan,
+  useCheckout,
+  useInvoices,
+  usePortal,
+  useResumeSubscription,
+} from "@/hooks/use-billing"
 import { AdminOnly } from "@/components/admin-only"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,6 +49,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
 import {
   Table,
   TableBody,
@@ -57,12 +59,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -84,7 +80,7 @@ function formatPrice(price: number | null): string {
 type BadgeVariant = React.ComponentProps<typeof Badge>["variant"]
 
 const SUBSCRIPTION_STATUS: Record<
-  Subscription["status"],
+  SubscriptionRead["status"],
   { label: string; variant: BadgeVariant }
 > = {
   active: { label: "Active", variant: "success" },
@@ -93,10 +89,7 @@ const SUBSCRIPTION_STATUS: Record<
   canceled: { label: "Canceled", variant: "secondary" },
 }
 
-const INVOICE_STATUS: Record<
-  Invoice["status"],
-  { label: string; variant: BadgeVariant }
-> = {
+const INVOICE_STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
   paid: { label: "Paid", variant: "success" },
   open: { label: "Open", variant: "warning" },
   void: { label: "Void", variant: "secondary" },
@@ -133,33 +126,306 @@ function UsageMeter({
   )
 }
 
+function BillingSkeleton() {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="grid gap-4 xl:grid-cols-5">
+        <Skeleton className="h-48 rounded-xl xl:col-span-3" />
+        <Skeleton className="h-48 rounded-xl xl:col-span-2" />
+      </div>
+      <Skeleton className="h-72 rounded-xl" />
+    </div>
+  )
+}
+
+function InvoicesCard() {
+  const { data, isLoading, isError } = useInvoices()
+  const invoices = data?.items ?? []
+
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader>
+        <CardTitle>Invoices</CardTitle>
+        <CardDescription>Billing history for this workspace</CardDescription>
+      </CardHeader>
+      <CardContent className="px-0">
+        {isLoading ? (
+          <div className="flex flex-col gap-3 px-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-8" />
+            ))}
+          </div>
+        ) : isError ? (
+          <Empty className="border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <TriangleAlert />
+              </EmptyMedia>
+              <EmptyTitle>Couldn&apos;t load invoices</EmptyTitle>
+              <EmptyDescription>
+                Check that the backend is reachable, then try again.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : invoices.length === 0 ? (
+          <Empty className="border-0">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <ReceiptText />
+              </EmptyMedia>
+              <EmptyTitle>No invoices yet</EmptyTitle>
+              <EmptyDescription>
+                Your first invoice appears after your first paid billing cycle.
+                Receipts and PDFs live in the billing portal.
+              </EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-4">Date</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="pr-4">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {invoices.map((invoice) => {
+                const invoiceStatus =
+                  INVOICE_STATUS[invoice.status] ?? INVOICE_STATUS.open
+                return (
+                  <TableRow key={invoice.id}>
+                    <TableCell className="pl-4 font-mono tabular-nums">
+                      {dateFormatter.format(new Date(invoice.date))}
+                    </TableCell>
+                    <TableCell>{invoice.description ?? "Subscription payment"}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">
+                      {currency.format(Number(invoice.amount))}
+                    </TableCell>
+                    <TableCell className="pr-4">
+                      <Badge variant={invoiceStatus.variant}>
+                        {invoiceStatus.label}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function PortalCard({ hasBillingProfile }: { hasBillingProfile: boolean }) {
+  const portal = usePortal()
+
+  return (
+    <Card className="self-start">
+      <CardHeader>
+        <CardTitle>Billing portal</CardTitle>
+        <CardDescription>
+          Update your card, download receipts, and manage your subscription in
+          the secure Dodo Payments portal.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        <Button
+          variant="outline"
+          disabled={!hasBillingProfile || portal.isPending}
+          onClick={() => portal.mutate()}
+        >
+          {portal.isPending ? (
+            <Spinner data-icon="inline-start" />
+          ) : (
+            <ExternalLink data-icon="inline-start" />
+          )}
+          Open portal
+        </Button>
+        {!hasBillingProfile && (
+          <p className="text-xs text-muted-foreground">
+            Available after your first subscription.
+          </p>
+        )}
+        {portal.isError && (
+          <p className="text-xs text-destructive">
+            {portal.error instanceof ApiError
+              ? portal.error.message
+              : "Could not open the portal."}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+export default function BillingPage() {
+  // Billing is admin-only: plan changes, payment methods, and invoices are
+  // workspace-level actions. The backend enforces the same rule from the JWT.
+  return (
+    <AdminOnly>
+      <BillingContent />
+    </AdminOnly>
+  )
+}
+
 function BillingContent() {
-  const currentPlan = getPlan(SUBSCRIPTION.planId)
-  const status = SUBSCRIPTION_STATUS[SUBSCRIPTION.status]
-  const renewsOn = dateFormatter.format(new Date(SUBSCRIPTION.renewsAt))
+  const { data, isLoading, isError, refetch } = useBilling()
+
+  if (isLoading) return <BillingSkeleton />
+
+  if (isError || !data) {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <TriangleAlert />
+          </EmptyMedia>
+          <EmptyTitle>Couldn&apos;t load billing</EmptyTitle>
+          <EmptyDescription>
+            The EORank API is unreachable. Start the backend and try again.
+          </EmptyDescription>
+        </EmptyHeader>
+        <Button variant="outline" onClick={() => refetch()}>
+          <RefreshCw data-icon="inline-start" />
+          Retry
+        </Button>
+      </Empty>
+    )
+  }
+
+  return <BillingLoaded subscription={data} />
+}
+
+function BillingLoaded({ subscription }: { subscription: SubscriptionRead }) {
+  const currentPlan = getPlan(subscription.plan_id)
+  const effectiveId = effectivePlanId(subscription)
+  const status = SUBSCRIPTION_STATUS[subscription.status]
+  const renewsOn = subscription.renews_at
+    ? dateFormatter.format(new Date(subscription.renews_at))
+    : null
+  const isPaid = effectiveId !== "free"
+
+  const changePlan = useChangePlan()
+  const cancel = useCancelSubscription()
+  const resume = useResumeSubscription()
+  const checkout = useCheckout()
 
   const plansRef = React.useRef<HTMLDivElement>(null)
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [planDialog, setPlanDialog] = React.useState<Plan | null>(null)
+  // Local flag: the backend has no scheduled-cancel field; the Dodo portal
+  // shows the authoritative state.
+  const [cancelScheduled, setCancelScheduled] = React.useState(false)
+  const [changePending, setChangePending] = React.useState(false)
+  const [actionError, setActionError] = React.useState<string | null>(null)
 
-  // null price = Scale (contact sales) — moving to it is always an "upgrade".
   const isUpgrade =
     planDialog !== null &&
     (planDialog.priceMonthly === null ||
       planDialog.priceMonthly > (currentPlan.priceMonthly ?? Infinity))
 
-  function confirmPlanChange() {
-    // TODO: POST /api/v1/billing/plan { planId } — Dodo Payments subscription change-plan (supports proration).
-    setPlanDialog(null)
+  function selectPlan(plan: Plan) {
+    setActionError(null)
+    if (plan.id === "free") {
+      // Moving to Free = cancelling the paid subscription.
+      if (isPaid) setCancelOpen(true)
+      return
+    }
+    setPlanDialog(plan)
   }
 
-  function confirmCancel() {
-    // TODO: DELETE /api/v1/billing/subscription — cancels at next billing date via Dodo Payments.
-    setCancelOpen(false)
+  async function confirmPlanChange() {
+    if (!planDialog || planDialog.id === "free" || planDialog.id === "scale") return
+    const planId = planDialog.id
+    setActionError(null)
+    try {
+      if (isPaid) {
+        await changePlan.mutateAsync({ plan_id: planId, period: "yearly" })
+        setChangePending(true)
+        setPlanDialog(null)
+      } else {
+        // Free → paid goes through hosted checkout (redirects on success).
+        await checkout.mutateAsync({ plan_id: planId, period: "yearly" })
+      }
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError ? err.message : "Something went wrong. Try again."
+      )
+    }
   }
+
+  async function confirmCancel() {
+    setActionError(null)
+    try {
+      await cancel.mutateAsync()
+      setCancelScheduled(true)
+      setCancelOpen(false)
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError ? err.message : "Could not cancel. Try again."
+      )
+    }
+  }
+
+  async function handleResume() {
+    setActionError(null)
+    try {
+      await resume.mutateAsync()
+      setCancelScheduled(false)
+    } catch (err) {
+      setActionError(
+        err instanceof ApiError ? err.message : "Could not resume. Try again."
+      )
+    }
+  }
+
+  const mutating = changePlan.isPending || cancel.isPending || checkout.isPending
 
   return (
     <>
+      {subscription.status === "past_due" && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+          <TriangleAlert className="size-4 shrink-0 text-destructive" />
+          <span>
+            Your last payment failed — your workspace is on Free limits until
+            it&apos;s resolved. Update your card in the billing portal.
+          </span>
+        </div>
+      )}
+      {cancelScheduled && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+          <span>
+            Cancellation scheduled — your {currentPlan.name} plan stays active
+            {renewsOn ? (
+              <>
+                {" "}
+                until <span className="font-mono tabular-nums">{renewsOn}</span>
+              </>
+            ) : null}
+            , then your workspace moves to Free.
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            disabled={resume.isPending}
+            onClick={handleResume}
+          >
+            {resume.isPending && <Spinner data-icon="inline-start" />}
+            Resume subscription
+          </Button>
+        </div>
+      )}
+      {changePending && (
+        <div className="flex items-center gap-2 rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+          <RefreshCw className="size-4 shrink-0 text-muted-foreground" />
+          Plan change confirmed — your new limits apply within a few seconds.
+        </div>
+      )}
+
       {/* Current plan + usage */}
       <div className="grid gap-4 xl:grid-cols-5">
         <Card className="xl:col-span-3">
@@ -182,13 +448,15 @@ function BillingContent() {
               >
                 Change plan
               </Button>
-              <Button
-                variant="ghost"
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => setCancelOpen(true)}
-              >
-                Cancel subscription
-              </Button>
+              {isPaid && !cancelScheduled && (
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setCancelOpen(true)}
+                >
+                  Cancel subscription
+                </Button>
+              )}
             </CardAction>
           </CardHeader>
           <CardContent className="flex flex-col gap-1">
@@ -198,10 +466,12 @@ function BillingContent() {
               </span>
               <span className="text-sm text-muted-foreground">/mo</span>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Renews on{" "}
-              <span className="font-mono tabular-nums">{renewsOn}</span>
-            </p>
+            {renewsOn && (
+              <p className="text-xs text-muted-foreground">
+                Renews on{" "}
+                <span className="font-mono tabular-nums">{renewsOn}</span>
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -209,19 +479,31 @@ function BillingContent() {
           <CardHeader>
             <CardTitle>Usage this cycle</CardTitle>
             <CardDescription>
-              Resets on <span className="font-mono tabular-nums">{renewsOn}</span>
+              {renewsOn ? (
+                <>
+                  Resets on{" "}
+                  <span className="font-mono tabular-nums">{renewsOn}</span>
+                </>
+              ) : (
+                "Resets monthly"
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             <UsageMeter
               label="Prompts used"
-              used={SUBSCRIPTION.usage.promptsUsed}
-              limit={currentPlan.promptsPerMonth}
+              used={subscription.usage.prompts.used}
+              limit={subscription.usage.prompts.limit}
             />
             <UsageMeter
               label="Tracked companies"
-              used={SUBSCRIPTION.usage.companiesUsed}
-              limit={currentPlan.trackedCompanies}
+              used={subscription.usage.companies.used}
+              limit={subscription.usage.companies.limit}
+            />
+            <UsageMeter
+              label="Running jobs"
+              used={subscription.usage.concurrent_jobs.active}
+              limit={subscription.usage.concurrent_jobs.limit}
             />
           </CardContent>
         </Card>
@@ -231,7 +513,8 @@ function BillingContent() {
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-medium">Plans</h2>
         <p className="text-xs text-muted-foreground">
-          Switch anytime — changes take effect at the next billing cycle.
+          Switch anytime — upgrades are prorated, downgrades credit your next
+          renewal. Billed yearly (2 months free).
         </p>
       </div>
       <div
@@ -239,12 +522,9 @@ function BillingContent() {
         className="grid scroll-mt-4 gap-4 md:grid-cols-2 xl:grid-cols-4"
       >
         {PLANS.map((plan) => {
-          const isCurrent = plan.id === SUBSCRIPTION.planId
+          const isCurrent = plan.id === effectiveId
           return (
-            <Card
-              key={plan.id}
-              className={cn(plan.popular && "ring-primary/40")}
-            >
+            <Card key={plan.id} className={cn(plan.popular && "ring-primary/40")}>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-sm font-medium">
                   {plan.name}
@@ -271,10 +551,7 @@ function BillingContent() {
                 </div>
                 <ul className="flex flex-col gap-2">
                   {plan.features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-start gap-2 text-sm"
-                    >
+                    <li key={feature} className="flex items-start gap-2 text-sm">
                       <Check className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                       {feature}
                     </li>
@@ -287,7 +564,6 @@ function BillingContent() {
                     </Button>
                   ) : plan.priceMonthly === null ? (
                     <Button variant="outline" className="w-full" asChild>
-                      {/* Custom pricing — no self-serve change dialog. */}
                       <a href="mailto:sales@eorank.com?subject=EORank%20Scale%20plan">
                         Contact sales
                       </a>
@@ -296,7 +572,8 @@ function BillingContent() {
                     <Button
                       variant="outline"
                       className="w-full"
-                      onClick={() => setPlanDialog(plan)}
+                      disabled={mutating}
+                      onClick={() => selectPlan(plan)}
                     >
                       {plan.priceMonthly > (currentPlan.priceMonthly ?? 0)
                         ? "Upgrade"
@@ -310,122 +587,10 @@ function BillingContent() {
         })}
       </div>
 
-      {/* Payment method + invoices */}
+      {/* Portal + invoices */}
       <div className="grid gap-4 xl:grid-cols-3">
-        <Card className="self-start">
-          <CardHeader>
-            <CardTitle>Payment method</CardTitle>
-            <CardDescription>Charged on each renewal</CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-                <CreditCard className="size-4" />
-              </span>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">
-                  {PAYMENT_METHOD.brand}{" "}
-                  <span className="font-mono tabular-nums">
-                    •••• {PAYMENT_METHOD.last4}
-                  </span>
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Expires{" "}
-                  <span className="font-mono tabular-nums">
-                    {String(PAYMENT_METHOD.expMonth).padStart(2, "0")}/
-                    {PAYMENT_METHOD.expYear}
-                  </span>
-                </span>
-              </div>
-            </div>
-            {/* TODO: link to the Dodo Payments customer portal to update the card. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" aria-disabled className="opacity-50">
-                  Update
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Coming soon</TooltipContent>
-            </Tooltip>
-          </CardContent>
-        </Card>
-
-        <Card className="xl:col-span-2">
-          <CardHeader>
-            <CardTitle>Invoices</CardTitle>
-            <CardDescription>Billing history for this workspace</CardDescription>
-          </CardHeader>
-          <CardContent className="px-0">
-            {INVOICES.length === 0 ? (
-              <Empty className="border-0">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <ReceiptText />
-                  </EmptyMedia>
-                  <EmptyTitle>No invoices yet</EmptyTitle>
-                  <EmptyDescription>
-                    Your first invoice appears after your first paid billing
-                    cycle.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="pl-4">Invoice</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="pr-4 text-right">
-                      <span className="sr-only">Download</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {INVOICES.map((invoice) => {
-                    const invoiceStatus = INVOICE_STATUS[invoice.status]
-                    return (
-                      <TableRow key={invoice.id}>
-                        <TableCell className="pl-4 font-mono tabular-nums">
-                          {invoice.id}
-                        </TableCell>
-                        <TableCell className="font-mono tabular-nums">
-                          {dateFormatter.format(new Date(invoice.date))}
-                        </TableCell>
-                        <TableCell>{invoice.description}</TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {currency.format(invoice.amount)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={invoiceStatus.variant}>
-                            {invoiceStatus.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="pr-4 text-right">
-                          {/* TODO: GET /api/v1/billing/invoices/{id}/pdf (Dodo Payments hosted invoice URL) */}
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                aria-label={`Download invoice ${invoice.id}`}
-                              >
-                                <Download />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Download PDF</TooltipContent>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+        <PortalCard hasBillingProfile={subscription.plan_id !== "free"} />
+        <InvoicesCard />
       </div>
 
       {/* Cancel subscription confirm */}
@@ -434,29 +599,43 @@ function BillingContent() {
           <DialogHeader>
             <DialogTitle>Cancel subscription?</DialogTitle>
             <DialogDescription>
-              Your {currentPlan.name} plan stays active until{" "}
-              <span className="font-mono tabular-nums">{renewsOn}</span>, then
-              your workspace moves to the Free plan. Tracking beyond Free plan
-              limits will pause and history older than 7 days becomes
-              unavailable.
+              Your {currentPlan.name} plan stays active
+              {renewsOn ? (
+                <>
+                  {" "}
+                  until{" "}
+                  <span className="font-mono tabular-nums">{renewsOn}</span>
+                </>
+              ) : null}
+              , then your workspace moves to the Free plan (20 prompts/month, 1
+              brand, 7-day history).
             </DialogDescription>
           </DialogHeader>
+          {actionError && <p className="text-xs text-destructive">{actionError}</p>}
           <DialogFooter>
             <DialogClose asChild>
               <Button variant="outline">Keep subscription</Button>
             </DialogClose>
-            <Button variant="destructive" onClick={confirmCancel}>
+            <Button
+              variant="destructive"
+              disabled={cancel.isPending}
+              onClick={confirmCancel}
+            >
+              {cancel.isPending && <Spinner data-icon="inline-start" />}
               Cancel subscription
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Plan change confirm */}
+      {/* Plan change / checkout confirm */}
       <Dialog
         open={planDialog !== null}
         onOpenChange={(open) => {
-          if (!open) setPlanDialog(null)
+          if (!open) {
+            setPlanDialog(null)
+            setActionError(null)
+          }
         }}
       >
         <DialogContent>
@@ -467,23 +646,43 @@ function BillingContent() {
                   {isUpgrade ? "Upgrade" : "Downgrade"} to {planDialog.name}?
                 </DialogTitle>
                 <DialogDescription>
-                  Your subscription changes from {currentPlan.name} (
-                  <span className="font-mono tabular-nums">
-                    {formatPrice(currentPlan.priceMonthly)}
-                  </span>
-                  /mo) to {planDialog.name} (
-                  <span className="font-mono tabular-nums">
-                    {formatPrice(planDialog.priceMonthly)}
-                  </span>
-                  /mo). The new limits apply at the next billing cycle.
+                  {isPaid ? (
+                    <>
+                      Your subscription changes from {currentPlan.name} (
+                      <span className="font-mono tabular-nums">
+                        {formatPrice(currentPlan.priceMonthly)}
+                      </span>
+                      /mo) to {planDialog.name} (
+                      <span className="font-mono tabular-nums">
+                        {formatPrice(planDialog.priceMonthly)}
+                      </span>
+                      /mo). Upgrades charge the prorated difference now;
+                      downgrades credit your next renewal.
+                    </>
+                  ) : (
+                    <>
+                      You&apos;ll be taken to our secure checkout to start the{" "}
+                      {planDialog.name} plan (
+                      <span className="font-mono tabular-nums">
+                        {formatPrice(planDialog.priceMonthly)}
+                      </span>
+                      /mo, billed yearly).
+                    </>
+                  )}
                 </DialogDescription>
               </DialogHeader>
+              {actionError && (
+                <p className="text-xs text-destructive">{actionError}</p>
+              )}
               <DialogFooter>
                 <DialogClose asChild>
                   <Button variant="outline">Cancel</Button>
                 </DialogClose>
-                <Button onClick={confirmPlanChange}>
-                  Confirm {isUpgrade ? "upgrade" : "downgrade"}
+                <Button disabled={mutating} onClick={confirmPlanChange}>
+                  {mutating && <Spinner data-icon="inline-start" />}
+                  {isPaid
+                    ? `Confirm ${isUpgrade ? "upgrade" : "downgrade"}`
+                    : "Continue to checkout"}
                 </Button>
               </DialogFooter>
             </>
@@ -491,15 +690,5 @@ function BillingContent() {
         </DialogContent>
       </Dialog>
     </>
-  )
-}
-
-export default function BillingPage() {
-  // Billing is admin-only: plan changes, payment methods, and invoices are
-  // workspace-level actions. Backend will enforce the same rule from the JWT.
-  return (
-    <AdminOnly>
-      <BillingContent />
-    </AdminOnly>
   )
 }

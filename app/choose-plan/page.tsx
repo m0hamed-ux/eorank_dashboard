@@ -5,9 +5,12 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowRight, Check, ShieldCheck, Sparkles } from "lucide-react"
 
+import { ApiError, type SelfServePlanId } from "@/lib/api"
 import { PLANS, type Plan } from "@/lib/billing"
 import { cn } from "@/lib/utils"
 import { useAnimatedNumber } from "@/hooks/use-animated-number"
+import { useCheckout } from "@/hooks/use-billing"
+import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -89,7 +92,17 @@ function BillingToggle({
   )
 }
 
-function PlanCard({ plan, period }: { plan: Plan; period: Period }) {
+function PlanCard({
+  plan,
+  period,
+  checkingOut,
+  onCheckout,
+}: {
+  plan: Plan
+  period: Period
+  checkingOut: string | null
+  onCheckout: (planId: SelfServePlanId) => void
+}) {
   const price = monthlyFor(plan, period)
   const isCustom = price === null
 
@@ -176,8 +189,6 @@ function PlanCard({ plan, period }: { plan: Plan; period: Period }) {
               </a>
             </Button>
           ) : (
-            // TODO(dodo): POST /api/v1/billing/checkout { planId, period } →
-            // redirect to the Dodo Payments checkout session.
             <Button
               variant={plan.popular ? "default" : "outline"}
               className={cn(
@@ -186,15 +197,19 @@ function PlanCard({ plan, period }: { plan: Plan; period: Period }) {
                   ? "shadow-md shadow-primary/30 hover:shadow-lg hover:shadow-primary/40 hover:brightness-110"
                   : "hover:border-primary/50 hover:text-primary"
               )}
-              asChild
+              disabled={checkingOut !== null}
+              onClick={() => onCheckout(plan.id as SelfServePlanId)}
             >
-              <Link href="/">
-                Start with {plan.name}
+              {checkingOut === plan.id ? (
+                <Spinner data-icon="inline-start" />
+              ) : null}
+              Start with {plan.name}
+              {checkingOut !== plan.id && (
                 <ArrowRight
                   data-icon="inline-end"
                   className="transition-transform duration-200 group-hover:translate-x-0.5"
                 />
-              </Link>
+              )}
             </Button>
           )}
         </div>
@@ -208,7 +223,26 @@ function PlanCard({ plan, period }: { plan: Plan; period: Period }) {
 // SubscriptionRepository.get_or_create), so skipping this page loses nothing.
 export default function ChoosePlanPage() {
   const [period, setPeriod] = React.useState<Period>("yearly")
+  const [checkingOut, setCheckingOut] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const checkout = useCheckout()
   const paidPlans = PLANS.filter((plan) => plan.id !== "free")
+
+  async function startCheckout(planId: SelfServePlanId) {
+    setError(null)
+    setCheckingOut(planId)
+    try {
+      // Redirects to Dodo's hosted checkout on success.
+      await checkout.mutateAsync({ plan_id: planId, period })
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not start checkout. Please try again."
+      )
+      setCheckingOut(null)
+    }
+  }
 
   return (
     <div className="flex w-full max-w-4xl flex-col items-center gap-8">
@@ -235,9 +269,17 @@ export default function ChoosePlanPage() {
 
       <BillingToggle period={period} onChange={setPeriod} />
 
+      {error && <p className="text-sm text-destructive">{error}</p>}
+
       <div className="grid w-full gap-4 pt-2 md:grid-cols-3">
         {paidPlans.map((plan) => (
-          <PlanCard key={plan.id} plan={plan} period={period} />
+          <PlanCard
+            key={plan.id}
+            plan={plan}
+            period={period}
+            checkingOut={checkingOut}
+            onCheckout={startCheckout}
+          />
         ))}
       </div>
 
