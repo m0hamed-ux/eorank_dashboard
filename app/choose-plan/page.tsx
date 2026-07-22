@@ -5,11 +5,13 @@ import Image from "next/image"
 import Link from "next/link"
 import { ArrowRight, Check, ShieldCheck, Sparkles } from "lucide-react"
 
+import { useRouter } from "next/navigation"
+
 import { ApiError, type SelfServePlanId } from "@/lib/api"
-import { PLANS, type Plan } from "@/lib/billing"
+import { effectivePlanId, PLANS, type Plan } from "@/lib/billing"
 import { cn } from "@/lib/utils"
 import { useAnimatedNumber } from "@/hooks/use-animated-number"
-import { useCheckout } from "@/hooks/use-billing"
+import { useBilling, useChangePlan, useCheckout } from "@/hooks/use-billing"
 import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -96,15 +98,18 @@ function PlanCard({
   plan,
   period,
   checkingOut,
+  currentPlanId,
   onCheckout,
 }: {
   plan: Plan
   period: Period
   checkingOut: string | null
+  currentPlanId: string | null
   onCheckout: (planId: SelfServePlanId) => void
 }) {
   const price = monthlyFor(plan, period)
   const isCustom = price === null
+  const isCurrent = plan.id === currentPlanId
 
   return (
     <Card
@@ -188,6 +193,10 @@ function PlanCard({
                 />
               </a>
             </Button>
+          ) : isCurrent ? (
+            <Button variant="outline" className="w-full" disabled>
+              Current plan
+            </Button>
           ) : (
             <Button
               variant={plan.popular ? "default" : "outline"}
@@ -203,7 +212,7 @@ function PlanCard({
               {checkingOut === plan.id ? (
                 <Spinner data-icon="inline-start" />
               ) : null}
-              Start with {plan.name}
+              {currentPlanId ? `Switch to ${plan.name}` : `Start with ${plan.name}`}
               {checkingOut !== plan.id && (
                 <ArrowRight
                   data-icon="inline-end"
@@ -222,18 +231,33 @@ function PlanCard({
 // point (the backend provisions free/active on first quota-checked request —
 // SubscriptionRepository.get_or_create), so skipping this page loses nothing.
 export default function ChoosePlanPage() {
+  const router = useRouter()
   const [period, setPeriod] = React.useState<Period>("yearly")
   const [checkingOut, setCheckingOut] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const checkout = useCheckout()
+  const changePlan = useChangePlan()
+  const { data: subscription } = useBilling()
   const paidPlans = PLANS.filter((plan) => plan.id !== "free")
 
-  async function startCheckout(planId: SelfServePlanId) {
+  // Already-paying orgs switch plans here too (the backend rejects a second
+  // checkout with 409 — change-plan is the correct path for them).
+  const currentPaidPlan =
+    subscription && effectivePlanId(subscription) !== "free"
+      ? effectivePlanId(subscription)
+      : null
+
+  async function selectPlan(planId: SelfServePlanId) {
     setError(null)
     setCheckingOut(planId)
     try {
-      // Redirects to Dodo's hosted checkout on success.
-      await checkout.mutateAsync({ plan_id: planId, period })
+      if (currentPaidPlan) {
+        await changePlan.mutateAsync({ plan_id: planId, period })
+        router.push("/billing")
+      } else {
+        // Redirects to Dodo's hosted checkout on success.
+        await checkout.mutateAsync({ plan_id: planId, period })
+      }
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -278,7 +302,8 @@ export default function ChoosePlanPage() {
             plan={plan}
             period={period}
             checkingOut={checkingOut}
-            onCheckout={startCheckout}
+            currentPlanId={currentPaidPlan}
+            onCheckout={selectPlan}
           />
         ))}
       </div>
