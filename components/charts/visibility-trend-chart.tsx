@@ -19,7 +19,9 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 })
 
 function formatDay(iso: string) {
-  return dateFormatter.format(new Date(`${iso}T00:00:00Z`))
+  // Robust to day strings AND full ISO timestamps; never throws on bad input.
+  const date = new Date(iso.includes("T") ? iso : `${iso}T00:00:00Z`)
+  return Number.isNaN(date.getTime()) ? "" : dateFormatter.format(date)
 }
 
 export function VisibilityTrendChart({ data }: { data: TrendPoint[] }) {

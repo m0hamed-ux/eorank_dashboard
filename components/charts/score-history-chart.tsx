@@ -19,7 +19,11 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
 })
 
 function formatDay(iso: string) {
-  return dateFormatter.format(new Date(`${iso}T00:00:00Z`))
+  // Accepts both day strings ("2026-05-21") and full ISO timestamps (the
+  // API sends audit timestamps). Never throw on bad input — an unparseable
+  // tick label must not crash the whole page.
+  const date = new Date(iso.includes("T") ? iso : `${iso}T00:00:00Z`)
+  return Number.isNaN(date.getTime()) ? "" : dateFormatter.format(date)
 }
 
 export function ScoreHistoryChart({ data }: { data: ScoreHistoryPoint[] }) {
