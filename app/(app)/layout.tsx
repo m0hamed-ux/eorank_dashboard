@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppSidebar } from "@/components/app-sidebar";
 import { PageTitle } from "@/components/page-title";
 import { QueryProvider } from "@/components/query-provider";
+import { ActiveCompanyProvider } from "@/components/active-company-context";
 
 export default async function AppLayout({
   children,
@@ -31,7 +32,8 @@ export default async function AppLayout({
 
   return (
     <QueryProvider>
-      <TooltipProvider>
+      <ActiveCompanyProvider>
+        <TooltipProvider>
         <SidebarProvider>
           <AppSidebar />
           <SidebarInset>
@@ -41,7 +43,8 @@ export default async function AppLayout({
             <div className="flex flex-1 flex-col gap-4 p-4 bg-white">{children}</div>
           </SidebarInset>
         </SidebarProvider>
-      </TooltipProvider>
+        </TooltipProvider>
+      </ActiveCompanyProvider>
     </QueryProvider>
   );
 }

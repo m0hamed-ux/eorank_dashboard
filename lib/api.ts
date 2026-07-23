@@ -103,6 +103,46 @@ export interface InvoiceRead {
   description: string | null
 }
 
+// ── Score / audit (mirrors backend app/schemas/score.py) ────────────────────
+
+export type ScorePillarId =
+  | "geo"
+  | "aeo"
+  | "authority"
+  | "structured"
+  | "content"
+  | "freshness"
+export type TipImpact = "high" | "medium" | "low"
+export type TipEffort = "easy" | "medium" | "hard"
+
+export interface PillarRead {
+  pillar: ScorePillarId
+  value: number
+  delta: number | null
+}
+
+export interface TipRead {
+  id: string
+  title: string
+  description: string
+  pillar: ScorePillarId
+  impact: TipImpact
+  effort: TipEffort
+  gain: number
+  done: boolean
+}
+
+export interface ScoreRead {
+  company_id: string
+  overall: number
+  grade: string
+  delta: number | null
+  audited_at: string // ISO
+  pillars: PillarRead[]
+  tips: TipRead[]
+  history: { audited_at: string; overall: number }[]
+}
+
 // ── Core request helper ──────────────────────────────────────────────────────
 
 type GetToken = () => Promise<string | null>
@@ -219,6 +259,22 @@ export function createApi(getToken: GetToken) {
           `/api/v1/billing/invoices${suffix}`
         )
       },
+    },
+    score: {
+      get: (companyId: string) =>
+        request<ScoreRead>(
+          getToken,
+          "GET",
+          `/api/v1/score?company_id=${encodeURIComponent(companyId)}`
+        ),
+      audit: (companyId: string) =>
+        request<ScoreRead>(getToken, "POST", "/api/v1/score/audit", {
+          company_id: companyId,
+        }),
+      setTipDone: (tipId: string, done: boolean) =>
+        request<TipRead>(getToken, "PATCH", `/api/v1/score/tips/${tipId}`, {
+          done,
+        }),
     },
   }
 }

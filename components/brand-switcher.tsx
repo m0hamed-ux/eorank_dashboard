@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query"
 
 import { ApiError, type CompanyRead } from "@/lib/api"
 import { useApi } from "@/hooks/use-api"
-import { useCompanies } from "@/hooks/use-companies"
+import { useActiveCompany } from "@/components/active-company-context"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -73,14 +73,9 @@ function BrandLogo({
 export function BrandSwitcher() {
   const api = useApi()
   const queryClient = useQueryClient()
-  const { data, isLoading, isError } = useCompanies()
-
-  const companies = React.useMemo(() => data?.items ?? [], [data])
-
-  // Active selection is per-tab UI state; default to the first (most recent).
-  const [activeId, setActiveId] = React.useState<string | null>(null)
-  const active =
-    companies.find((company) => company.id === activeId) ?? companies[0] ?? null
+  // Shared app-wide selection — Score (and later Jobs/Citations) follow it.
+  const { companies, active, setActiveId, isLoading, isError } =
+    useActiveCompany()
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [name, setName] = React.useState("")

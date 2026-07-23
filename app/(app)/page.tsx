@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { ArrowRight, Gauge, Play, Quote, Target, Trophy } from "lucide-react"
+import { ArrowRight, Play, Quote, Target, Trophy } from "lucide-react"
 
 import {
   getDailyCitations,
@@ -9,7 +9,6 @@ import {
 } from "@/lib/analytics"
 import { PROMPT_RESULTS } from "@/lib/citations"
 import { SEED_JOBS } from "@/lib/jobs-data"
-import { OVERALL } from "@/lib/score"
 import { citedCount } from "@/types/citation"
 import { PROVIDERS } from "@/types/job"
 import { Button } from "@/components/ui/button"
@@ -21,12 +20,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { BarStrip } from "@/components/charts/bar-strip"
 import { Sparkline } from "@/components/charts/sparkline"
 import { VisibilityTrendChart } from "@/components/charts/visibility-trend-chart"
 import { OutcomeChip } from "@/components/citation-result"
 import { JobStatusBadge } from "@/components/job-status-badge"
 import { ProviderBreakdown } from "@/components/provider-breakdown"
+import { ScoreStatCard } from "@/components/score-stat-card"
 import { StatCard } from "@/components/stat-card"
 
 // Dashboard overview — the landing view after login. All data is static
@@ -73,15 +72,7 @@ export default function Home() {
 
       {/* KPI row */}
       <div className="grid auto-rows-min gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          value={String(OVERALL.score)}
-          delta={OVERALL.delta}
-          deltaLabel="Score"
-          metricName="Visibility Score"
-          metricIcon={Gauge}
-        >
-          <BarStrip value={OVERALL.score} />
-        </StatCard>
+        <ScoreStatCard />
         <StatCard
           value={`${summary.citationRate}%`}
           delta={summary.citationRateDelta}

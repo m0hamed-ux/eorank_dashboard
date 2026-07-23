@@ -108,16 +108,26 @@ function TipRow({
   )
 }
 
-export function EnhancementTips({ tips: initialTips }: { tips: EnhancementTip[] }) {
-  // Local toggle state; persistence comes with the backend.
-  // TODO: PATCH /api/v1/score/tips/{id} once the API exists.
+export function EnhancementTips({
+  tips: initialTips,
+  onToggle,
+}: {
+  tips: EnhancementTip[]
+  // Persists the flip (PATCH /api/v1/score/tips/{id}); the local state below
+  // is the optimistic update.
+  onToggle?: (id: string, done: boolean) => void
+}) {
   const [tips, setTips] = React.useState(initialTips)
   const [showDone, setShowDone] = React.useState(false)
 
-  const toggle = (id: string) =>
-    setTips((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
-    )
+  // Re-sync when a fresh audit replaces the tip list.
+  React.useEffect(() => setTips(initialTips), [initialTips])
+
+  const toggle = (id: string) => {
+    const next = !(tips.find((t) => t.id === id)?.done ?? false)
+    setTips((prev) => prev.map((t) => (t.id === id ? { ...t, done: next } : t)))
+    onToggle?.(id, next)
+  }
 
   const open = [...tips.filter((t) => !t.done)].sort((a, b) => b.gain - a.gain)
   const done = tips.filter((t) => t.done)
